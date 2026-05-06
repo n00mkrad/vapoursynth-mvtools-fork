@@ -28,7 +28,7 @@ static void InitTables(int *offsets, int *weights, int out, int in) {
     float leftmost = 0.5f;       // + shift
     float rightmost = in - 0.5f; // + shift
 
-    int leftmost_idx = std::max<(int>(leftmost, 0);
+    int leftmost_idx = std::max<int>(leftmost, 0);
     int rightmost_idx = std::min<int>(rightmost, in - 1);
 
     for (int i = 0; i < out; i++) {
