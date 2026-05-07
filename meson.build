@@ -1,19 +1,11 @@
 project('MVTools', 'c', 'cpp',
         version: '26',
-        default_options: ['c_std=c11', 'cpp_std=c++17', 'buildtype=release', 'b_lto=true'],
+        default_options: ['c_std=c11', 'cpp_std=c++17', 'buildtype=debug', 'debug=true', 'b_lto=true'],
         meson_version: '>=1.2.3')
 
 
-warnings = [
-  '-Wall',
-  '-Wextra',
-  '-Wshadow',
-]
-
 cflags = [
-  warnings,
-  '-fvisibility=hidden',
-  '-DPACKAGE_VERSION="@0@"'.format(meson.project_version()),
+  '-DPACKAGE_VERSION="11"',
 ]
 
 ldflags = [
@@ -31,7 +23,12 @@ nasm_flags = [
 
 
 incdir = include_directories(
-  'vapoursynth/include'
+    run_command(
+        find_program('python', 'python3'),
+        '-c',
+        'import vapoursynth as vs; print(vs.get_include())',
+        check: true,
+    ).stdout().strip(),
 )
 
 
@@ -116,7 +113,7 @@ helper_libs = []
 
 
 if host_cpu_family.startswith('x86')
-  cflags += ['-mfpmath=sse', '-msse2', '-DMVTOOLS_X86=1']
+  cflags += ['-DMVTOOLS_X86=1']
 
 
   nasm_sources = [
@@ -163,7 +160,7 @@ if host_cpu_family.startswith('x86')
   helper_libs += static_library('avx2',
                                 libavx2_sources,
                                 include_directories: incdir,
-                                cpp_args: [cflags, '-mavx2', '-mtune=haswell'],
+                                cpp_args: cflags,
                                 install: false)
 endif
 
@@ -184,7 +181,6 @@ cxx = meson.get_compiler('cpp')
 
 
 deps = [
-  dependency('fftw3f'),
   cxx.find_library('m', required: false),
 ]
 
