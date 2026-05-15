@@ -34,56 +34,23 @@
 
 #if defined(MVTOOLS_X86) || defined(MVTOOLS_ARM)
 
-/* TODO: port these
-   extern "C" void  VerticalBicubic_iSSE(uint8_t *pDst, const uint8_t *pSrc, intptr_t nDstPitch,
-   intptr_t nWidth, intptr_t nHeight);
-   extern "C" void  HorizontalBicubic_iSSE(uint8_t *pDst, const uint8_t *pSrc, intptr_t nDstPitch,
-   intptr_t nWidth, intptr_t nHeight);
-   extern "C" void  RB2F_iSSE(uint8_t *pDst, const uint8_t *pSrc, intptr_t nDstPitch,
-   intptr_t nSrcPitch, intptr_t nWidth, intptr_t nHeight);
-   extern "C" void  RB2FilteredVerticalLine_SSE(uint8_t *pDst, const uint8_t *pSrc, intptr_t nSrcPitch, intptr_t nWidthMMX);
-   extern "C" void  RB2FilteredHorizontalInplaceLine_SSE(uint8_t *pSrc, intptr_t nWidthMMX);
-   */
-
 #if defined(MVTOOLS_ARM)
 #include "sse2neon.h"
 #else
 
 #include <emmintrin.h>
 
-void Average2_avx2(uint8_t *pDst, const uint8_t *pSrc1, const uint8_t *pSrc2, intptr_t nPitch, intptr_t nWidth, intptr_t nHeight);
+
 void VerticalBilinear_avx2(uint8_t *pDst, const uint8_t *pSrc, intptr_t nPitch,
-                           intptr_t nWidth, intptr_t nHeight, intptr_t bitsPerSample);
-void HorizontalBilinear_avx2(uint8_t *pDst, const uint8_t *pSrc, intptr_t nPitch,
-                             intptr_t nWidth, intptr_t nHeight, intptr_t bitsPerSample);
-void DiagonalBilinear_avx2(uint8_t *pDst, const uint8_t *pSrc, intptr_t nPitch,
                            intptr_t nWidth, intptr_t nHeight, intptr_t bitsPerSample);
 void VerticalWiener_avx2(uint8_t *pDst, const uint8_t *pSrc, intptr_t nPitch,
                          intptr_t nWidth, intptr_t nHeight, intptr_t bitsPerSample);
-void HorizontalWiener_avx2(uint8_t *pDst, const uint8_t *pSrc, intptr_t nPitch,
-                           intptr_t nWidth, intptr_t nHeight, intptr_t bitsPerSample) ;
 
 #endif
 
 
 
 #define zeroes _mm_setzero_si128()
-
-static void Average2_sse2(uint8_t *pDst, const uint8_t *pSrc1, const uint8_t *pSrc2, intptr_t nPitch, intptr_t nWidth, intptr_t nHeight) {
-    for (int y = 0; y < nHeight; y++) {
-        for (int x = 0; x < nWidth; x += 16) {
-            __m128i m0 = _mm_loadu_si128((const __m128i *)&pSrc1[x]);
-            __m128i m1 = _mm_loadu_si128((const __m128i *)&pSrc2[x]);
-
-            m0 = _mm_avg_epu8(m0, m1);
-            _mm_storeu_si128((__m128i *)&pDst[x], m0);
-        }
-
-        pSrc1 += nPitch;
-        pSrc2 += nPitch;
-        pDst += nPitch;
-    }
-}
 
 
 static void VerticalBilinear_sse2(uint8_t *pDst, const uint8_t *pSrc, intptr_t nPitch,
@@ -105,72 +72,6 @@ static void VerticalBilinear_sse2(uint8_t *pDst, const uint8_t *pSrc, intptr_t n
 
     for (int x = 0; x < nWidth; x++)
         pDst[x] = pSrc[x];
-}
-
-
-static void HorizontalBilinear_sse2(uint8_t *pDst, const uint8_t *pSrc, intptr_t nPitch,
-                                    intptr_t nWidth, intptr_t nHeight, intptr_t bitsPerSample) {
-    (void)bitsPerSample;
-
-    for (int y = 0; y < nHeight; y++) {
-        for (int x = 0; x < nWidth; x += 16) {
-            __m128i m0 = _mm_loadu_si128((const __m128i *)&pSrc[x]);
-            __m128i m1 = _mm_loadu_si128((const __m128i *)&pSrc[x + 1]);
-
-            m0 = _mm_avg_epu8(m0, m1);
-            _mm_storeu_si128((__m128i *)&pDst[x], m0);
-        }
-
-        pDst[nWidth - 1] = pSrc[nWidth - 1];
-
-        pSrc += nPitch;
-        pDst += nPitch;
-    }
-}
-
-
-static void DiagonalBilinear_sse2(uint8_t *pDst, const uint8_t *pSrc, intptr_t nPitch,
-                                  intptr_t nWidth, intptr_t nHeight, intptr_t bitsPerSample) {
-    (void)bitsPerSample;
-
-    for (int y = 0; y < nHeight - 1; y++) {
-        for (int x = 0; x < nWidth; x += 8) {
-            __m128i m0 = _mm_loadl_epi64((const __m128i *)&pSrc[x]);
-            __m128i m1 = _mm_loadl_epi64((const __m128i *)&pSrc[x + 1]);
-            __m128i m2 = _mm_loadl_epi64((const __m128i *)&pSrc[x + nPitch]);
-            __m128i m3 = _mm_loadl_epi64((const __m128i *)&pSrc[x + nPitch + 1]);
-
-            m0 = _mm_unpacklo_epi8(m0, zeroes);
-            m1 = _mm_unpacklo_epi8(m1, zeroes);
-            m2 = _mm_unpacklo_epi8(m2, zeroes);
-            m3 = _mm_unpacklo_epi8(m3, zeroes);
-
-            m0 = _mm_add_epi16(m0, m1);
-            m2 = _mm_add_epi16(m2, m3);
-            m0 = _mm_add_epi16(m0, _mm_set1_epi16(2));
-            m0 = _mm_add_epi16(m0, m2);
-
-            m0 = _mm_srli_epi16(m0, 2);
-
-            m0 = _mm_packus_epi16(m0, m0);
-            _mm_storel_epi64((__m128i *)&pDst[x], m0);
-        }
-
-        pDst[nWidth - 1] = (pSrc[nWidth - 1] + pSrc[nWidth - 1 + nPitch] + 1) >> 1;
-
-        pSrc += nPitch;
-        pDst += nPitch;
-    }
-
-    for (int x = 0; x < nWidth; x += 8) {
-        __m128i m0 = _mm_loadl_epi64((const __m128i *)&pSrc[x]);
-        __m128i m1 = _mm_loadl_epi64((const __m128i *)&pSrc[x + 1]);
-
-        m0 = _mm_avg_epu8(m0, m1);
-        _mm_storel_epi64((__m128i *)&pDst[x], m0);
-    }
-
-    pDst[nWidth - 1] = pSrc[nWidth - 1];
 }
 
 
@@ -322,7 +223,7 @@ static void RB2QuadraticVerticalLine_sse2(uint8_t *pDst, const uint8_t *pSrc, in
 }
 
 
-static void RB2BilinearFilteredVerticalLine_sse2(uint8_t *pDst, const uint8_t *pSrc, intptr_t nSrcPitch, intptr_t nWidthMMX) {
+static void RB2BilinearFilteredVerticalLine_sse2(uint8_t * VS_RESTRICT pDst, const uint8_t * VS_RESTRICT pSrc, intptr_t nSrcPitch, intptr_t nWidthMMX) {
     for (int x = 0; x < nWidthMMX; x += 8) {
         __m128i m0 = _mm_loadl_epi64((const __m128i *)&pSrc[x - nSrcPitch]);
         __m128i m1 = _mm_loadl_epi64((const __m128i *)&pSrc[x]);
@@ -451,62 +352,11 @@ static void VerticalWiener_sse2(uint8_t *pDst, const uint8_t *pSrc, intptr_t nPi
 }
 
 
-static void HorizontalWiener_sse2(uint8_t *pDst, const uint8_t *pSrc, intptr_t nPitch,
-                                  intptr_t nWidth, intptr_t nHeight, intptr_t bitsPerSample) {
-    (void)bitsPerSample;
-
-    for (int y = 0; y < nHeight; y++) {
-        pDst[0] = (pSrc[0] + pSrc[1] + 1) >> 1;
-        pDst[1] = (pSrc[1] + pSrc[2] + 1) >> 1;
-
-        for (int x = 2; x < nWidth - 4; x += 8) {
-            __m128i m0 = _mm_loadl_epi64((const __m128i *)&pSrc[x - 2]);
-            __m128i m1 = _mm_loadl_epi64((const __m128i *)&pSrc[x - 1]);
-            __m128i m2 = _mm_loadl_epi64((const __m128i *)&pSrc[x]);
-            __m128i m3 = _mm_loadl_epi64((const __m128i *)&pSrc[x + 1]);
-            __m128i m4 = _mm_loadl_epi64((const __m128i *)&pSrc[x + 2]);
-            __m128i m5 = _mm_loadl_epi64((const __m128i *)&pSrc[x + 3]);
-
-            m0 = _mm_unpacklo_epi8(m0, zeroes);
-            m1 = _mm_unpacklo_epi8(m1, zeroes);
-            m2 = _mm_unpacklo_epi8(m2, zeroes);
-            m3 = _mm_unpacklo_epi8(m3, zeroes);
-            m4 = _mm_unpacklo_epi8(m4, zeroes);
-            m5 = _mm_unpacklo_epi8(m5, zeroes);
-
-            m2 = _mm_add_epi16(m2, m3);
-            m2 = _mm_slli_epi16(m2, 2);
-
-            m1 = _mm_add_epi16(m1, m4);
-
-            m2 = _mm_sub_epi16(m2, m1);
-            m3 = _mm_slli_epi16(m2, 2);
-            m2 = _mm_add_epi16(m2, m3);
-
-            m0 = _mm_add_epi16(m0, m5);
-            m0 = _mm_add_epi16(m0, m2);
-            m0 = _mm_add_epi16(m0, _mm_set1_epi16(16));
-
-            m0 = _mm_srai_epi16(m0, 5);
-            m0 = _mm_packus_epi16(m0, m0);
-            _mm_storel_epi64((__m128i *)&pDst[x], m0);
-        }
-
-        for (int x = nWidth - 4; x < nWidth - 1; x++)
-            pDst[x] = (pSrc[x] + pSrc[x + 1] + 1) >> 1;
-
-        pDst[nWidth - 1] = pSrc[nWidth - 1];
-
-        pDst += nPitch;
-        pSrc += nPitch;
-    }
-}
-
 #endif // MVTOOLS_X86
 
 
 template <typename PixelType>
-static void VerticalBilinear(uint8_t *pDst8, const uint8_t *pSrc8,
+static void VerticalBilinear(uint8_t * VS_RESTRICT pDst8, const uint8_t * VS_RESTRICT pSrc8,
                              intptr_t nPitch, intptr_t nWidth, intptr_t nHeight, intptr_t bitsPerSample) {
     (void)bitsPerSample;
 
@@ -528,7 +378,7 @@ static void VerticalBilinear(uint8_t *pDst8, const uint8_t *pSrc8,
 
 
 template <typename PixelType>
-static void HorizontalBilinear(uint8_t *pDst8, const uint8_t *pSrc8,
+static void HorizontalBilinear(uint8_t * VS_RESTRICT pDst8, const uint8_t * VS_RESTRICT pSrc8,
                                intptr_t nPitch, intptr_t nWidth, intptr_t nHeight, intptr_t bitsPerSample) {
     (void)bitsPerSample;
 
@@ -549,7 +399,7 @@ static void HorizontalBilinear(uint8_t *pDst8, const uint8_t *pSrc8,
 
 
 template <typename PixelType>
-static void DiagonalBilinear(uint8_t *pDst8, const uint8_t *pSrc8,
+static void DiagonalBilinear(uint8_t * VS_RESTRICT pDst8, const uint8_t * VS_RESTRICT pSrc8,
                              intptr_t nPitch, intptr_t nWidth, intptr_t nHeight, intptr_t bitsPerSample) {
     (void)bitsPerSample;
 
@@ -573,7 +423,7 @@ static void DiagonalBilinear(uint8_t *pDst8, const uint8_t *pSrc8,
 
 
 template <typename PixelType>
-static void RB2F_C(uint8_t *pDst8, const uint8_t *pSrc8, int nDstPitch,
+static void RB2F_C(uint8_t * VS_RESTRICT pDst8, const uint8_t * VS_RESTRICT pSrc8, int nDstPitch,
                    int nSrcPitch, int nWidth, int nHeight, int opt) {
     (void)opt;
 
@@ -597,7 +447,7 @@ static void RB2F_C(uint8_t *pDst8, const uint8_t *pSrc8, int nDstPitch,
 //  Filtered with 1/4, 1/2, 1/4 filter for smoothing and anti-aliasing - Fizick
 // nHeight is dst height which is reduced by 2 source height
 template <typename PixelType>
-static void RB2FilteredVertical(uint8_t *pDst8, const uint8_t *pSrc8, int nDstPitch,
+static void RB2FilteredVertical(uint8_t * VS_RESTRICT pDst8, const uint8_t * VS_RESTRICT pSrc8, int nDstPitch,
                                 int nSrcPitch, int nWidth, int nHeight, int opt) {
     (void)opt;
 
@@ -616,38 +466,21 @@ static void RB2FilteredVertical(uint8_t *pDst8, const uint8_t *pSrc8, int nDstPi
         pSrc += nSrcPitch * 2;
     }
 
-    /* TODO: port the asm
-       if (opt && nWidthMMX>=4)
-       {
-       for ( int y = 1; y < nHeight; y++ )
-       {
-       RB2FilteredVerticalLine_SSE((uint8_t *)pDst, (const uint8_t *)pSrc, nSrcPitch, nWidthMMX);
+    for (int y = 1; y < nHeight; y++) {
+        for (int x = 0; x < nWidth; x++)
+            pDst[x] = (pSrc[x - nSrcPitch] + pSrc[x] * 2 + pSrc[x + nSrcPitch] + 2) / 4;
 
-       for ( int x = nWidthMMX; x < nWidth; x++ )
-       pDst[x] = (pSrc[x-nSrcPitch] + pSrc[x]*2 + pSrc[x+nSrcPitch] + 2) /4;
-
-       pDst += nDstPitch;
-       pSrc += nSrcPitch * 2;
-       }
-       }
-       else
-       */
-    {
-        for (int y = 1; y < nHeight; y++) {
-            for (int x = 0; x < nWidth; x++)
-                pDst[x] = (pSrc[x - nSrcPitch] + pSrc[x] * 2 + pSrc[x + nSrcPitch] + 2) / 4;
-
-            pDst += nDstPitch;
-            pSrc += nSrcPitch * 2;
-        }
+        pDst += nDstPitch;
+        pSrc += nSrcPitch * 2;
     }
+
 }
 
 
 // Filtered with 1/4, 1/2, 1/4 filter for smoothing and anti-aliasing - Fizick
 // nWidth is dst height which is reduced by 2 source width
 template <typename PixelType>
-static void RB2FilteredHorizontalInplace(uint8_t *pSrc8, int nSrcPitch, int nWidth, int nHeight, int opt) {
+static void RB2FilteredHorizontalInplace(uint8_t * VS_RESTRICT pSrc8, int nSrcPitch, int nWidth, int nHeight, int opt) {
     (void)opt;
 
     /* int nWidthMMX = 1 + ((nWidth-2)/4)*4; */
@@ -660,19 +493,9 @@ static void RB2FilteredHorizontalInplace(uint8_t *pSrc8, int nSrcPitch, int nWid
         int x = 0;
         int pSrc0 = (pSrc[x * 2] + pSrc[x * 2 + 1] + 1) / 2;
 
-        /* TODO: port the asm
-           if (opt)
-           {
-           RB2FilteredHorizontalInplaceLine_SSE((uint8_t *)pSrc, nWidthMMX); // very first is skipped
-           for ( x = nWidthMMX; x < nWidth; x++ )
-           pSrc[x] = (pSrc[x*2-1] + pSrc[x*2]*2 + pSrc[x*2+1] + 2) /4;
-           }
-           else
-           */
-        {
-            for (x = 1; x < nWidth; x++)
-                pSrc[x] = (pSrc[x * 2 - 1] + pSrc[x * 2] * 2 + pSrc[x * 2 + 1] + 2) / 4;
-        }
+        for (x = 1; x < nWidth; x++)
+            pSrc[x] = (pSrc[x * 2 - 1] + pSrc[x * 2] * 2 + pSrc[x * 2 + 1] + 2) / 4;
+
         pSrc[0] = pSrc0;
 
         pSrc += nSrcPitch;
@@ -693,7 +516,7 @@ static void RB2Filtered(uint8_t *pDst, const uint8_t *pSrc, int nDstPitch,
 //  BilinearFiltered with 1/8, 3/8, 3/8, 1/8 filter for smoothing and anti-aliasing - Fizick
 // nHeight is dst height which is reduced by 2 source height
 template <typename PixelType>
-static void RB2BilinearFilteredVertical(uint8_t *pDst8, const uint8_t *pSrc8, int nDstPitch,
+static void RB2BilinearFilteredVertical(uint8_t * VS_RESTRICT pDst8, const uint8_t * VS_RESTRICT pSrc8, int nDstPitch,
                                         int nSrcPitch, int nWidth, int nHeight, int opt) {
 
     PixelType *pDst = (PixelType *)pDst8;
@@ -738,7 +561,7 @@ static void RB2BilinearFilteredVertical(uint8_t *pDst8, const uint8_t *pSrc8, in
 // BilinearFiltered with 1/8, 3/8, 3/8, 1/8 filter for smoothing and anti-aliasing - Fizick
 // nWidth is dst height which is reduced by 2 source width
 template <typename PixelType>
-static void RB2BilinearFilteredHorizontalInplace(uint8_t *pSrc8, int nSrcPitch, int nWidth, int nHeight, int opt) {
+static void RB2BilinearFilteredHorizontalInplace(uint8_t *VS_RESTRICT pSrc8, int nSrcPitch, int nWidth, int nHeight, int opt) {
 
     PixelType *pSrc = (PixelType *)pSrc8;
 
@@ -784,7 +607,7 @@ static void RB2BilinearFiltered(uint8_t *pDst, const uint8_t *pSrc, int nDstPitc
 // filtered Quadratic with 1/64, 9/64, 22/64, 22/64, 9/64, 1/64 filter for smoothing and anti-aliasing - Fizick
 // nHeight is dst height which is reduced by 2 source height
 template <typename PixelType>
-static void RB2QuadraticVertical(uint8_t *pDst8, const uint8_t *pSrc8, int nDstPitch,
+static void RB2QuadraticVertical(uint8_t *VS_RESTRICT pDst8, const uint8_t *VS_RESTRICT pSrc8, int nDstPitch,
                                  int nSrcPitch, int nWidth, int nHeight, int opt) {
     PixelType *pDst = (PixelType *)pDst8;
     PixelType *pSrc = (PixelType *)pSrc8;
@@ -842,7 +665,7 @@ static void RB2QuadraticVertical(uint8_t *pDst8, const uint8_t *pSrc8, int nDstP
 // filtered Quadratic with 1/64, 9/64, 22/64, 22/64, 9/64, 1/64 filter for smoothing and anti-aliasing - Fizick
 // nWidth is dst height which is reduced by 2 source width
 template <typename PixelType>
-static void RB2QuadraticHorizontalInplace(uint8_t *pSrc8, int nSrcPitch, int nWidth, int nHeight, int opt) {
+static void RB2QuadraticHorizontalInplace(uint8_t *VS_RESTRICT pSrc8, int nSrcPitch, int nWidth, int nHeight, int opt) {
     PixelType *pSrc = (PixelType *)pSrc8;
 
     nSrcPitch /= sizeof(PixelType);
@@ -901,7 +724,7 @@ static void RB2Quadratic(uint8_t *pDst, const uint8_t *pSrc, int nDstPitch,
 // filtered qubic with 1/32, 5/32, 10/32, 10/32, 5/32, 1/32 filter for smoothing and anti-aliasing - Fizick
 // nHeight is dst height which is reduced by 2 source height
 template <typename PixelType>
-static void RB2CubicVertical(uint8_t *pDst8, const uint8_t *pSrc8, int nDstPitch,
+static void RB2CubicVertical(uint8_t * VS_RESTRICT pDst8, const uint8_t * VS_RESTRICT pSrc8, int nDstPitch,
                              int nSrcPitch, int nWidth, int nHeight, int opt) {
     PixelType *pDst = (PixelType *)pDst8;
     PixelType *pSrc = (PixelType *)pSrc8;
@@ -959,7 +782,7 @@ static void RB2CubicVertical(uint8_t *pDst8, const uint8_t *pSrc8, int nDstPitch
 // filtered qubic with 1/32, 5/32, 10/32, 10/32, 5/32, 1/32 filter for smoothing and anti-aliasing - Fizick
 // nWidth is dst height which is reduced by 2 source width
 template <typename PixelType>
-static void RB2CubicHorizontalInplace(uint8_t *pSrc8, int nSrcPitch, int nWidth, int nHeight, int opt) {
+static void RB2CubicHorizontalInplace(uint8_t * VS_RESTRICT pSrc8, int nSrcPitch, int nWidth, int nHeight, int opt) {
     PixelType *pSrc = (PixelType *)pSrc8;
 
     nSrcPitch /= sizeof(PixelType);
@@ -1017,7 +840,7 @@ static void RB2Cubic(uint8_t *pDst, const uint8_t *pSrc, int nDstPitch,
 // so called Wiener interpolation. (sharp, similar to Lanczos ?)
 // invarint simplified, 6 taps. Weights: (1, -5, 20, 20, -5, 1)/32 - added by Fizick
 template <typename PixelType>
-static void VerticalWiener(uint8_t *pDst8, const uint8_t *pSrc8,
+static void VerticalWiener(uint8_t * VS_RESTRICT pDst8, const uint8_t * VS_RESTRICT pSrc8,
                            intptr_t nPitch, intptr_t nWidth, intptr_t nHeight, intptr_t bitsPerSample) {
     PixelType *pDst = (PixelType *)pDst8;
     PixelType *pSrc = (PixelType *)pSrc8;
@@ -1069,7 +892,7 @@ static void VerticalWiener(uint8_t *pDst8, const uint8_t *pSrc8,
 
 
 template <typename PixelType>
-static void HorizontalWiener(uint8_t *pDst8, const uint8_t *pSrc8,
+static void HorizontalWiener(uint8_t * VS_RESTRICT pDst8, const uint8_t * VS_RESTRICT pSrc8,
                              intptr_t nPitch, intptr_t nWidth, intptr_t nHeight, intptr_t bitsPerSample) {
     PixelType *pDst = (PixelType *)pDst8;
     PixelType *pSrc = (PixelType *)pSrc8;
@@ -1113,7 +936,7 @@ static void HorizontalWiener(uint8_t *pDst8, const uint8_t *pSrc8,
 
 // bicubic (Catmull-Rom 4 taps interpolation)
 template <typename PixelType>
-static void VerticalBicubic(uint8_t *pDst8, const uint8_t *pSrc8,
+static void VerticalBicubic(uint8_t * VS_RESTRICT pDst8, const uint8_t * VS_RESTRICT pSrc8,
                             intptr_t nPitch, intptr_t nWidth, intptr_t nHeight, intptr_t bitsPerSample) {
     PixelType *pDst = (PixelType *)pDst8;
     PixelType *pSrc = (PixelType *)pSrc8;
@@ -1151,7 +974,7 @@ static void VerticalBicubic(uint8_t *pDst8, const uint8_t *pSrc8,
 
 
 template <typename PixelType>
-static void HorizontalBicubic(uint8_t *pDst8, const uint8_t *pSrc8,
+static void HorizontalBicubic(uint8_t * VS_RESTRICT pDst8, const uint8_t * VS_RESTRICT pSrc8,
                               intptr_t nPitch, intptr_t nWidth, intptr_t nHeight, intptr_t bitsPerSample) {
     PixelType *pDst = (PixelType *)pDst8;
     PixelType *pSrc = (PixelType *)pSrc8;
@@ -1178,7 +1001,7 @@ static void HorizontalBicubic(uint8_t *pDst8, const uint8_t *pSrc8,
 
 // assume all pitches equal
 template <typename PixelType>
-static void Average2(uint8_t *pDst8, const uint8_t *pSrc18, const uint8_t *pSrc28,
+static void Average2(uint8_t * VS_RESTRICT pDst8, const uint8_t * VS_RESTRICT pSrc18, const uint8_t * VS_RESTRICT pSrc28,
                      intptr_t nPitch, intptr_t nWidth, intptr_t nHeight) {
     PixelType *pDst = (PixelType *)pDst8;
     PixelType *pSrc1 = (PixelType *)pSrc18;
@@ -1248,7 +1071,7 @@ unsigned int PlaneSuperOffset(int chroma, int src_height, int level, int pel, in
 
 
 template <typename PixelType>
-static void PadCorner(PixelType *p, PixelType v, int hPad, int vPad, int refPitch) {
+static void PadCorner(PixelType * VS_RESTRICT p, PixelType v, int hPad, int vPad, int refPitch) {
     for (int i = 0; i < vPad; i++) {
         if (sizeof(PixelType) == 1)
             memset(p, v, hPad); /* faster than loop */
@@ -1262,7 +1085,7 @@ static void PadCorner(PixelType *p, PixelType v, int hPad, int vPad, int refPitc
 
 
 template <typename PixelType>
-static void PadReferenceFrame(uint8_t *refFrame8, int refPitch, int hPad, int vPad, int width, int height) {
+static void PadReferenceFrame(uint8_t * VS_RESTRICT refFrame8, int refPitch, int hPad, int vPad, int width, int height) {
     refPitch /= sizeof(PixelType);
     PixelType *refFrame = (PixelType *)refFrame8;
     PixelType value;
@@ -1404,14 +1227,10 @@ void mvpRefine(MVPlane *mvp, int sharp) {
 
             if (mvp->opt) {
 #if defined(MVTOOLS_X86) || defined(MVTOOLS_ARM)
-                refine[0] = HorizontalBilinear_sse2;
                 refine[1] = VerticalBilinear_sse2;
-                refine[2] = DiagonalBilinear_sse2;
 #if defined(MVTOOLS_X86)
                 if (g_cpuinfo & X264_CPU_AVX2) {
-                    refine[0] = HorizontalBilinear_avx2;
                     refine[1] = VerticalBilinear_avx2;
-                    refine[2] = DiagonalBilinear_avx2;
                 }
 #endif
 #endif
@@ -1444,11 +1263,9 @@ void mvpRefine(MVPlane *mvp, int sharp) {
 
             if (mvp->opt) {
 #if defined(MVTOOLS_X86) || defined(MVTOOLS_ARM)
-                refine[0] = refine[2] = HorizontalWiener_sse2;
                 refine[1] = VerticalWiener_sse2;
 #if defined(MVTOOLS_X86)
                 if (g_cpuinfo & X264_CPU_AVX2) {
-                    refine[0] = refine[2] = HorizontalWiener_avx2;
                     refine[1] = VerticalWiener_avx2;
                 }
 #endif
@@ -1493,16 +1310,6 @@ void mvpRefine(MVPlane *mvp, int sharp) {
 
         if (mvp->bytesPerSample == 1) {
             avg = Average2<uint8_t>;
-
-            if (mvp->opt) {
-#if defined(MVTOOLS_X86) || defined(MVTOOLS_ARM)
-                avg = Average2_sse2;
-#if defined(MVTOOLS_X86)
-                if (g_cpuinfo & X264_CPU_AVX2)
-                    avg = Average2_avx2;
-#endif
-#endif
-            }
         } else {
             avg = Average2<uint16_t>;
         }
@@ -1640,20 +1447,10 @@ void mvpReduceTo(MVPlane *mvp, MVPlane *pReducedPlane, int rfilter) {
     ReduceFunction reduce = NULL;
 
     if (rfilter == RfilterSimple) {
-        /* TODO: port the asm
-               if (opt)
-               {
-               RB2F_iSSE(pReducedPlane->pPlane[0] + pReducedPlane->nOffsetPadding, pPlane[0] + nOffsetPadding,
-               pReducedPlane->nPitch, nPitch, pReducedPlane->nWidth, pReducedPlane->nHeight);
-               }
-               else
-               */
-        {
-            if (mvp->bytesPerSample == 1)
-                reduce = RB2F_C<uint8_t>;
-            else
-                reduce = RB2F_C<uint16_t>;
-        }
+        if (mvp->bytesPerSample == 1)
+            reduce = RB2F_C<uint8_t>;
+        else
+            reduce = RB2F_C<uint16_t>;
     } else if (rfilter == RfilterTriangle) {
         if (mvp->bytesPerSample == 1)
             reduce = RB2Filtered<uint8_t>;
