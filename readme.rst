@@ -11,6 +11,9 @@ The filter DepanEstimate was ported from the Avisynth plugin DepanEstimate, vers
 
 The filters DepanCompensate and DepanStabilise were ported from the Avisynth plugin Depan, version 1.13.1.
 
+Note that some functions such as MVShow are missing. Replacements for this functionality can be found in https://pypi.org/project/vapoursynth-manipmv/
+and will therefore never be implemented in this plugin.
+
 
 Differences
 ===========
@@ -86,7 +89,6 @@ Differences
     * No "inputlog" parameter.
 
     * Methods -1 and 2 unavailable.
-
 
 Usage
 =====
