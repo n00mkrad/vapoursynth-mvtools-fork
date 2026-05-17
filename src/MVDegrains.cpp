@@ -185,7 +185,7 @@ static const VSFrame *VS_CC mvdegrainGetFrame(int n, int activationReason, void 
         int tmpBlockPitch = nBlkSizeX[0] * bytesPerSample;
         uint8_t *tmpBlock = NULL;
         if (nOverlapX[0] > 0 || nOverlapY[0] > 0) {
-            DstTemp = new uint8_t[dstTempPitch * nHeight_B[0]];
+            DstTemp = new uint8_t[dstTempPitch * nHeight[0]];
             tmpBlock = new uint8_t[tmpBlockPitch * nBlkSizeY[0]];
         }
 

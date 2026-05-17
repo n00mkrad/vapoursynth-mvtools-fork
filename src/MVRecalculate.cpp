@@ -521,7 +521,7 @@ static void VS_CC mvrecalculateCreate(const VSMap *in, VSMap *out, void *userDat
 
 
     int nBlkX = (d.analysisData.nWidth - d.analysisData.nOverlapX) / (d.analysisData.nBlkSizeX - d.analysisData.nOverlapX); //x
-    int nBlkY = (d.analysisData.nHeight - d.analysisData.nOverlapY + (d.analysisData.nBlkSizeY - d.analysisData.nOverlapY - 1)) / (d.analysisData.nBlkSizeY - d.analysisData.nOverlapY);
+    int nBlkY = (d.analysisData.nHeight - d.analysisData.nOverlapY) / (d.analysisData.nBlkSizeY - d.analysisData.nOverlapY);
 
     d.analysisData.nBlkX = nBlkX;
     d.analysisData.nBlkY = nBlkY;
