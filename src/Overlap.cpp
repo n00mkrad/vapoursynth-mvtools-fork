@@ -160,14 +160,11 @@ void overlaps_c(uint8_t * VS_RESTRICT pDst8, ptrdiff_t nDstPitch, const uint8_t 
 #endif
 
 
-#define zeroes _mm_setzero_si128()
-
-
 template <unsigned blockWidth, unsigned blockHeight>
 struct OverlapsWrapper {
     static_assert(blockWidth >= 8, "");
 
-    static void overlaps_sse2(uint8_t *pDst8, ptrdiff_t nDstPitch, const uint8_t *pSrc, ptrdiff_t nSrcPitch, const int16_t *pWin, ptrdiff_t nWinPitch) {
+    static void overlaps_sse2(uint8_t * VS_RESTRICT pDst8, ptrdiff_t nDstPitch, const uint8_t * VS_RESTRICT pSrc, ptrdiff_t nSrcPitch, const int16_t * VS_RESTRICT pWin, ptrdiff_t nWinPitch) {
         /* pWin from 0 to 2048 */
         for (unsigned y = 0; y < blockHeight; y++) {
             for (unsigned x = 0; x < blockWidth; x += 8) {
@@ -177,7 +174,7 @@ struct OverlapsWrapper {
                 __m128i win = _mm_loadu_si128((const __m128i *)&pWin[x]);
                 __m128i dst = _mm_loadu_si128((__m128i *)&pDst[x]);
 
-                src = _mm_unpacklo_epi8(src, zeroes);
+                src = _mm_unpacklo_epi8(src, _mm_setzero_si128());
 
                 __m128i lo = _mm_mullo_epi16(src, win);
                 __m128i hi = _mm_mulhi_epi16(src, win);
@@ -199,14 +196,14 @@ struct OverlapsWrapper {
 template <unsigned blockHeight>
 struct OverlapsWrapper<4, blockHeight> {
 
-    static void overlaps_sse2(uint8_t *pDst, ptrdiff_t nDstPitch, const uint8_t *pSrc, ptrdiff_t nSrcPitch, const int16_t *pWin, ptrdiff_t nWinPitch) {
+    static void overlaps_sse2(uint8_t * VS_RESTRICT pDst, ptrdiff_t nDstPitch, const uint8_t * VS_RESTRICT pSrc, ptrdiff_t nSrcPitch, const int16_t * VS_RESTRICT pWin, ptrdiff_t nWinPitch) {
         /* pWin from 0 to 2048 */
         for (unsigned y = 0; y < blockHeight; y++) {
             __m128i src = _mm_cvtsi32_si128(*(const int *)pSrc);
             __m128i win = _mm_loadl_epi64((const __m128i *)pWin);
             __m128i dst = _mm_loadl_epi64((const __m128i *)pDst);
 
-            src = _mm_unpacklo_epi8(src, zeroes);
+            src = _mm_unpacklo_epi8(src, _mm_setzero_si128());
 
             __m128i lo = _mm_mullo_epi16(src, win);
             __m128i hi = _mm_mulhi_epi16(src, win);
@@ -222,9 +219,6 @@ struct OverlapsWrapper<4, blockHeight> {
     }
 
 };
-
-
-#undef zeroes
 
 
 #endif
