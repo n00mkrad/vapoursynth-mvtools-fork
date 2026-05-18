@@ -22,13 +22,13 @@
 #include <mutex>
 
 #include "DCTFFTW.h"
-
+#include <VSHelper4.h>
 
 static const float sqrt_2_div_2 = 0.70710678118654752440084436210485f;
 
 
 template <typename PixelType>
-static void Float2Pixels_C(const DCTFFTW *dct, uint8_t *dstp8, ptrdiff_t dst_pitch, float *realdata) {
+static void Float2Pixels_C(const DCTFFTW * VS_RESTRICT dct, uint8_t * VS_RESTRICT dstp8, ptrdiff_t dst_pitch, float *VS_RESTRICT realdata) {
     PixelType *dstp = (PixelType *)dstp8;
     dst_pitch /= sizeof(PixelType);
 
@@ -41,7 +41,7 @@ static void Float2Pixels_C(const DCTFFTW *dct, uint8_t *dstp8, ptrdiff_t dst_pit
     for (int j = 0; j < dct->sizey; j++) {
         for (int i = 0; i < dct->sizex; i++) {
             float f = realdata[i] * sqrt_2_div_2; // to be compatible with integer DCTINT8
-            int integ = (int)(nearbyintf(f));
+            int integ =  (f > 0) ? static_cast<int>(f + 0.5f) : static_cast<int>(f - 0.5f);
             dstp[i] = std::min(pixelMax, std::max(0, (integ >> dct->dctshift) + pixelHalf));
         }
         dstp += dst_pitch;
@@ -49,7 +49,7 @@ static void Float2Pixels_C(const DCTFFTW *dct, uint8_t *dstp8, ptrdiff_t dst_pit
     }
 
     float f = realdata_orig[0] * 0.5f; // to be compatible with integer DCTINT8
-    int integ = (int)(nearbyintf(f));
+    int integ =  (f > 0) ? static_cast<int>(f + 0.5f) : static_cast<int>(f - 0.5f);
     dstp_orig[0] = std::min(pixelMax, std::max(0, (integ >> dct->dctshift0) + pixelHalf)); // DC
 }
 
