@@ -61,11 +61,6 @@ if host_machine.cpu_family() == 'x86_64'
     )
 elif host_machine.cpu_family() == 'aarch64'
     add_project_arguments('-DMVTOOLS_ARM', language: ['cpp'])
-
-    libs += static_library('aarch64',
-        files('src/asm/aarch64-pixel-a.S'),
-        gnu_symbol_visibility: 'hidden',
-    )
 endif
 
 shared_module('mvtools',
