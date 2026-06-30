@@ -72,6 +72,37 @@ static inline uint8_t mvmaskLength(VECTOR v, uint8_t pel, float fMaskNormFactor2
 }
 
 
+static inline uint16_t mvmaskScale(uint8_t value, int pixelMax) {
+    return (uint16_t)((value * pixelMax + 127) / 255);
+}
+
+
+static void mvmaskScaleSmallMask(uint16_t *dst, const uint8_t *src, int size, int pixelMax) {
+    for (int i = 0; i < size; i++)
+        dst[i] = mvmaskScale(src[i], pixelMax);
+}
+
+
+template <typename PixelType>
+static void mvmaskPadRight(uint8_t *dstp, ptrdiff_t pitch, int width, int height, int widthB) {
+    for (int h = 0; h < height; h++) {
+        PixelType *dstp_ = (PixelType *)(dstp + h * pitch);
+        for (int w = widthB; w < width; w++)
+            dstp_[w] = dstp_[widthB - 1];
+    }
+}
+
+
+template <typename PixelType>
+static void mvmaskFillPlane(uint8_t *dstp, ptrdiff_t pitch, int width, int height, PixelType value) {
+    for (int h = 0; h < height; h++) {
+        PixelType *dstp_ = (PixelType *)(dstp + h * pitch);
+        for (int w = 0; w < width; w++)
+            dstp_[w] = value;
+    }
+}
+
+
 static const VSFrame *VS_CC mvmaskGetFrame(int n, int activationReason, void *instanceData, void **frameData, VSFrameContext *frameCtx, VSCore *core, const VSAPI *vsapi) {
     (void)frameData;
 
@@ -109,7 +140,10 @@ static const VSFrame *VS_CC mvmaskGetFrame(int n, int activationReason, void *in
         const int nHeight = d->vectors_data.nHeight;
         const int nWidthUV = d->nWidthUV;
         const int nHeightUV = d->nHeightUV;
-        const int nSceneChangeValue = d->nSceneChangeValue;
+        const int bitsPerSample = d->vi.format.bitsPerSample;
+        const int bytesPerSample = d->vi.format.bytesPerSample;
+        const int pixelMax = (1 << bitsPerSample) - 1;
+        const int nSceneChangeValue = bitsPerSample == 8 ? d->nSceneChangeValue : mvmaskScale((uint8_t)d->nSceneChangeValue, pixelMax);
 
         if (fgopIsUsable(&fgop, d->thscd1, d->thscd2)) {
             const int nBlkX = d->vectors_data.nBlkX;
@@ -131,7 +165,6 @@ static const VSFrame *VS_CC mvmaskGetFrame(int n, int activationReason, void *in
             SimpleResize *upsizer = &d->upsizer;
             SimpleResize *upsizerUV = &d->upsizerUV;
             const int time256 = d->time256;
-            const int bitsPerSample = vsapi->getVideoFrameFormat(src)->bitsPerSample;
 
             uint8_t *smallMask = (uint8_t *)malloc(nBlkX * nBlkY);
             uint8_t *smallMaskV = (uint8_t *)malloc(nBlkX * nBlkY);
@@ -140,7 +173,7 @@ static const VSFrame *VS_CC mvmaskGetFrame(int n, int activationReason, void *in
                 for (int j = 0; j < nBlkCount; j++)
                     smallMask[j] = mvmaskLength(fgopGetBlock(&fgop, 0, j)->vector, nPel, fMaskNormFactor2, fHalfGamma);
             } else if (kind == 1) { // SAD mask
-                MakeSADMaskTime(&fgop, nBlkX, nBlkY, 4.0 * fMaskNormFactor / (nBlkSizeX * nBlkSizeY), fGamma, nPel, smallMask, nBlkX, time256, nBlkSizeX - nOverlapX, nBlkSizeY - nOverlapY, bitsPerSample);
+                MakeSADMaskTime(&fgop, nBlkX, nBlkY, 4.0 * fMaskNormFactor / (nBlkSizeX * nBlkSizeY), fGamma, nPel, smallMask, nBlkX, time256, nBlkSizeX - nOverlapX, nBlkSizeY - nOverlapY, d->vectors_data.bitsPerSample);
             } else if (kind == 2) { // occlusion mask
                 MakeVectorOcclusionMaskTime(&fgop, d->vectors_data.isBackward, nBlkX, nBlkY, 1.0 / fMaskNormFactor, fGamma, nPel, smallMask, nBlkX, time256, nBlkSizeX - nOverlapX, nBlkSizeY - nOverlapY);
             } else if (kind == 3) { // vector x mask
@@ -157,47 +190,85 @@ static const VSFrame *VS_CC mvmaskGetFrame(int n, int activationReason, void *in
                 }
             }
 
-            if (kind == 5) { // do not change luma for kind=5
-                memcpy(pDst[0], pSrc[0], nSrcPitches[0] * nHeight);
+            if (bitsPerSample == 8) {
+                if (kind == 5) { // do not change luma for kind=5
+                    vsh::bitblt(pDst[0], nDstPitches[0], pSrc[0], nSrcPitches[0], nWidth * bytesPerSample, nHeight);
+                } else {
+                    upsizer->simpleResize_uint8_t(upsizer, pDst[0], nDstPitches[0], smallMask, nBlkX, 0);
+                    if (nWidth > nWidthB)
+                        mvmaskPadRight<uint8_t>(pDst[0], nDstPitches[0], nWidth, nHeight, nWidthB);
+                    if (nHeight > nHeightB)
+                        vsh::bitblt(pDst[0] + nHeightB * nDstPitches[0], nDstPitches[0], pDst[0] + (nHeightB - 1) * nDstPitches[0], nDstPitches[0], nWidth * bytesPerSample, nHeight - nHeightB);
+                }
+
+                // chroma
+                upsizerUV->simpleResize_uint8_t(upsizerUV, pDst[1], nDstPitches[1], smallMask, nBlkX, 0);
+
+                if (kind == 5)
+                    upsizerUV->simpleResize_uint8_t(upsizerUV, pDst[2], nDstPitches[2], smallMaskV, nBlkX, 0);
+                else
+                    vsh::bitblt(pDst[2], nDstPitches[2], pDst[1], nDstPitches[1], nWidthUV * bytesPerSample, nHeightUV);
             } else {
-                upsizer->simpleResize_uint8_t(upsizer, pDst[0], nDstPitches[0], smallMask, nBlkX, 0);
-                if (nWidth > nWidthB)
-                    for (int h = 0; h < nHeight; h++)
-                        for (int w = nWidthB; w < nWidth; w++)
-                            *(pDst[0] + h * nDstPitches[0] + w) = *(pDst[0] + h * nDstPitches[0] + nWidthB - 1);
-                if (nHeight > nHeightB)
-                    vsh::bitblt(pDst[0] + nHeightB * nDstPitches[0], nDstPitches[0], pDst[0] + (nHeightB - 1) * nDstPitches[0], nDstPitches[0], nWidth, nHeight - nHeightB);
+                uint16_t *smallMask16 = (uint16_t *)malloc(nBlkX * nBlkY * sizeof(uint16_t));
+                uint16_t *smallMaskV16 = kind == 5 ? (uint16_t *)malloc(nBlkX * nBlkY * sizeof(uint16_t)) : NULL;
+
+                mvmaskScaleSmallMask(smallMask16, smallMask, nBlkCount, pixelMax);
+                if (kind == 5)
+                    mvmaskScaleSmallMask(smallMaskV16, smallMaskV, nBlkCount, pixelMax);
+
+                if (kind == 5) { // do not change luma for kind=5
+                    vsh::bitblt(pDst[0], nDstPitches[0], pSrc[0], nSrcPitches[0], nWidth * bytesPerSample, nHeight);
+                } else {
+                    upsizer->simpleResize_uint16_t(upsizer, (uint16_t *)pDst[0], nDstPitches[0] / sizeof(uint16_t), smallMask16, nBlkX, 0);
+                    if (nWidth > nWidthB)
+                        mvmaskPadRight<uint16_t>(pDst[0], nDstPitches[0], nWidth, nHeight, nWidthB);
+                    if (nHeight > nHeightB)
+                        vsh::bitblt(pDst[0] + nHeightB * nDstPitches[0], nDstPitches[0], pDst[0] + (nHeightB - 1) * nDstPitches[0], nDstPitches[0], nWidth * bytesPerSample, nHeight - nHeightB);
+                }
+
+                // chroma
+                upsizerUV->simpleResize_uint16_t(upsizerUV, (uint16_t *)pDst[1], nDstPitches[1] / sizeof(uint16_t), smallMask16, nBlkX, 0);
+
+                if (kind == 5)
+                    upsizerUV->simpleResize_uint16_t(upsizerUV, (uint16_t *)pDst[2], nDstPitches[2] / sizeof(uint16_t), smallMaskV16, nBlkX, 0);
+                else
+                    vsh::bitblt(pDst[2], nDstPitches[2], pDst[1], nDstPitches[1], nWidthUV * bytesPerSample, nHeightUV);
+
+                free(smallMask16);
+                free(smallMaskV16);
             }
 
-            // chroma
-            upsizerUV->simpleResize_uint8_t(upsizerUV, pDst[1], nDstPitches[1], smallMask, nBlkX, 0);
-
-            if (kind == 5)
-                upsizerUV->simpleResize_uint8_t(upsizerUV, pDst[2], nDstPitches[2], smallMaskV, nBlkX, 0);
-            else
-                memcpy(pDst[2], pDst[1], nHeightUV * nDstPitches[1]);
-
-            if (nWidthUV > nWidthBUV)
-                for (int h = 0; h < nHeightUV; h++)
-                    for (int w = nWidthBUV; w < nWidthUV; w++) {
-                        *(pDst[1] + h * nDstPitches[1] + w) = *(pDst[1] + h * nDstPitches[1] + nWidthBUV - 1);
-                        *(pDst[2] + h * nDstPitches[2] + w) = *(pDst[2] + h * nDstPitches[2] + nWidthBUV - 1);
-                    }
+            if (nWidthUV > nWidthBUV) {
+                if (bitsPerSample == 8) {
+                    mvmaskPadRight<uint8_t>(pDst[1], nDstPitches[1], nWidthUV, nHeightUV, nWidthBUV);
+                    mvmaskPadRight<uint8_t>(pDst[2], nDstPitches[2], nWidthUV, nHeightUV, nWidthBUV);
+                } else {
+                    mvmaskPadRight<uint16_t>(pDst[1], nDstPitches[1], nWidthUV, nHeightUV, nWidthBUV);
+                    mvmaskPadRight<uint16_t>(pDst[2], nDstPitches[2], nWidthUV, nHeightUV, nWidthBUV);
+                }
+            }
             if (nHeightUV > nHeightBUV) {
-                vsh::bitblt(pDst[1] + nHeightBUV * nDstPitches[1], nDstPitches[1], pDst[1] + (nHeightBUV - 1) * nDstPitches[1], nDstPitches[1], nWidthUV, nHeightUV - nHeightBUV);
-                vsh::bitblt(pDst[2] + nHeightBUV * nDstPitches[2], nDstPitches[2], pDst[2] + (nHeightBUV - 1) * nDstPitches[2], nDstPitches[2], nWidthUV, nHeightUV - nHeightBUV);
+                vsh::bitblt(pDst[1] + nHeightBUV * nDstPitches[1], nDstPitches[1], pDst[1] + (nHeightBUV - 1) * nDstPitches[1], nDstPitches[1], nWidthUV * bytesPerSample, nHeightUV - nHeightBUV);
+                vsh::bitblt(pDst[2] + nHeightBUV * nDstPitches[2], nDstPitches[2], pDst[2] + (nHeightBUV - 1) * nDstPitches[2], nDstPitches[2], nWidthUV * bytesPerSample, nHeightUV - nHeightBUV);
             }
 
             free(smallMask);
             free(smallMaskV);
         } else { // not usable
             if (kind == 5)
-                memcpy(pDst[0], pSrc[0], nSrcPitches[0] * nHeight);
-            else
+                vsh::bitblt(pDst[0], nDstPitches[0], pSrc[0], nSrcPitches[0], nWidth * bytesPerSample, nHeight);
+            else if (bitsPerSample == 8)
                 memset(pDst[0], nSceneChangeValue, nHeight * nDstPitches[0]);
+            else
+                mvmaskFillPlane<uint16_t>(pDst[0], nDstPitches[0], nWidth, nHeight, (uint16_t)nSceneChangeValue);
 
-            memset(pDst[1], nSceneChangeValue, nHeightUV * nDstPitches[1]);
-            memset(pDst[2], nSceneChangeValue, nHeightUV * nDstPitches[2]);
+            if (bitsPerSample == 8) {
+                memset(pDst[1], nSceneChangeValue, nHeightUV * nDstPitches[1]);
+                memset(pDst[2], nSceneChangeValue, nHeightUV * nDstPitches[2]);
+            } else {
+                mvmaskFillPlane<uint16_t>(pDst[1], nDstPitches[1], nWidthUV, nHeightUV, (uint16_t)nSceneChangeValue);
+                mvmaskFillPlane<uint16_t>(pDst[2], nDstPitches[2], nWidthUV, nHeightUV, (uint16_t)nSceneChangeValue);
+            }
         }
 
         fgopDeinit(&fgop);
@@ -318,18 +389,19 @@ static void VS_CC mvmaskCreate(const VSMap *in, VSMap *out, void *userData, VSCo
     d.node = vsapi->mapGetNode(in, "clip", 0, NULL);
     d.vi = *vsapi->getVideoInfo(d.node);
 
-    if (!vsh::isConstantVideoFormat(&d.vi) || d.vi.format.bitsPerSample > 8 || d.vi.format.subSamplingW > 1 || d.vi.format.subSamplingH > 1 || (d.vi.format.colorFamily != cfYUV && d.vi.format.colorFamily != cfGray)) {
-        vsapi->mapSetError(out, "Mask: input clip must be GRAY8, YUV420P8, YUV422P8, YUV440P8, or YUV444P8, with constant dimensions.");
+    if (!vsh::isConstantVideoFormat(&d.vi) || d.vi.format.bitsPerSample > 16 || d.vi.format.sampleType != stInteger || d.vi.format.subSamplingW > 1 || d.vi.format.subSamplingH > 1 || (d.vi.format.colorFamily != cfYUV && d.vi.format.colorFamily != cfGray)) {
+        vsapi->mapSetError(out, "Mask: input clip must be GRAY, 420, 422, 440, or 444, up to 16 bits, with constant dimensions.");
         vsapi->freeNode(d.node);
         vsapi->freeNode(d.vectors);
         return;
     }
 
     if (d.vi.format.colorFamily == cfGray)
-        vsapi->getVideoFormatByID(&d.vi.format, pfYUV444P8, core);
+        vsapi->queryVideoFormat(&d.vi.format, cfYUV, stInteger, d.vi.format.bitsPerSample, 0, 0, core);
 
-    simpleInit(&d.upsizer, d.nWidthB, d.nHeightB, d.vectors_data.nBlkX, d.vectors_data.nBlkY, d.vectors_data.nWidth, d.vectors_data.nHeight, d.vectors_data.nPel, d.opt);
-    simpleInit(&d.upsizerUV, d.nWidthBUV, d.nHeightBUV, d.vectors_data.nBlkX, d.vectors_data.nBlkY, d.nWidthUV, d.nHeightUV, d.vectors_data.nPel, d.opt);
+    int resizeOpt = d.vi.format.bitsPerSample == 8 ? d.opt : 0;
+    simpleInit(&d.upsizer, d.nWidthB, d.nHeightB, d.vectors_data.nBlkX, d.vectors_data.nBlkY, d.vectors_data.nWidth, d.vectors_data.nHeight, d.vectors_data.nPel, resizeOpt);
+    simpleInit(&d.upsizerUV, d.nWidthBUV, d.nHeightBUV, d.vectors_data.nBlkX, d.vectors_data.nBlkY, d.nWidthUV, d.nHeightUV, d.vectors_data.nPel, resizeOpt);
 
     d.time256 = (int)(time * 256 / 100);
 

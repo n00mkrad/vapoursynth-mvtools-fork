@@ -38,6 +38,10 @@ typedef void (*ResizeFunction8)(const SimpleResize *simple,
                                 uint8_t *dstp, ptrdiff_t dst_stride,
                                 const uint8_t *srcp, ptrdiff_t src_stride,
                                 int horizontal_vectors);
+typedef void (*ResizeFunctionU16)(const SimpleResize *simple,
+                                  uint16_t *dstp, ptrdiff_t dst_stride,
+                                  const uint16_t *srcp, ptrdiff_t src_stride,
+                                  int horizontal_vectors);
 typedef void (*ResizeFunction16)(const SimpleResize *simple,
                                  int16_t *dstp, ptrdiff_t dst_stride,
                                  const int16_t *srcp, ptrdiff_t src_stride,
@@ -64,6 +68,7 @@ typedef struct SimpleResize {
     int *horizontal_weights;
 
     ResizeFunction8 simpleResize_uint8_t;
+    ResizeFunctionU16 simpleResize_uint16_t;
     ResizeFunction16 simpleResize_int16_t;
 } SimpleResize;
 

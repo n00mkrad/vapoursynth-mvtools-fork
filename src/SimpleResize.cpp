@@ -56,14 +56,11 @@ static void InitTables(int *offsets, int *weights, int out, int in) {
 
 
 // Thread-safe.
-template <typename PixelType>
+template <typename PixelType, bool limit_vectors>
 static void simpleResize(const SimpleResize *simple,
                          PixelType *dstp, ptrdiff_t dst_stride,
                          const PixelType *srcp, ptrdiff_t src_stride,
                          int horizontal_vectors) {
-
-    // Apparently only 16 bit vectors need limiting.
-    bool limit_vectors = sizeof(PixelType) == 2;
 
     int pel = simple->pel;
     int minimum = 0;
@@ -141,8 +138,9 @@ void simpleInit(SimpleResize *simple, int dst_width, int dst_height, int src_wid
     InitTables(simple->horizontal_offsets, simple->horizontal_weights, dst_width, src_width);
     InitTables(simple->vertical_offsets, simple->vertical_weights, dst_height, src_height);
 
-    simple->simpleResize_uint8_t = simpleResize<uint8_t>;
-    simple->simpleResize_int16_t = simpleResize<int16_t>;
+    simple->simpleResize_uint8_t = simpleResize<uint8_t, false>;
+    simple->simpleResize_uint16_t = simpleResize<uint16_t, false>;
+    simple->simpleResize_int16_t = simpleResize<int16_t, true>;
 
     if (opt) {
 #if defined(MVTOOLS_X86)
